@@ -50,19 +50,19 @@ public class ElevatorWriter extends Thread {
 		sendMessage("m "+id+" "+STOP);
 	}
 	
-	public void setScale(int elevator, int floor){
-		sendMessage("s "+elevator+" "+floor);
+	public void setScale(int id, int floor){
+		sendMessage("s "+id+" "+floor);
 	}
 	
-	public void inspectElevator(int elevator){
-		sendMessage("w "+elevator);
+	public void inspectElevator(int id){
+		sendMessage("w "+id);
 	}
 	
-	public void openElevator(int elevator){
-		sendMessage("d "+elevator+" "+OPEN);
+	public void openDoor(int id){
+		sendMessage("d "+id+" "+OPEN);
 	}
 	
-	public void closeElevator(int elevator){
-		sendMessage("d "+elevator+" "+CLOSE);
+	public void closeDoor(int id){
+		sendMessage("d "+id+" "+CLOSE);
 	}
 }
