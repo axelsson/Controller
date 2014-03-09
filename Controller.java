@@ -6,28 +6,24 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.Socket;
 import java.net.UnknownHostException;
-import java.rmi.NotBoundException;
 import java.rmi.Remote;
-import java.rmi.RemoteException;
-import java.rmi.registry.LocateRegistry;
-import java.rmi.registry.Registry;
-
-import elevator.rmi.GetAll;
 /*TODO
  * om en hiss snart är klar med sin order och nära, låt den ta request
+ * måste räkna ut kostnad för halvklar hiss, och ha koll på vilket håll den ska åt från button req
+ * lägg på kostnad för dörröppning också
+ * problem: om hissen får req från knapptryckning på samma våning fast ett upp och ett ner. Går bra när första är i samma riktning som hissen
  * 
  * */
+
+//en hiss, flera request åt olika håll. 
 public class Controller implements Serializable, Remote{
 	private static final long serialVersionUID = 1L;
 	public static final int UP = 1;
 	public static final int DOWN = -1;
 	public static final int STOP = 0;
-	private static final int OPEN = 1;
-	private static final int CLOSE = -1;
 	private double velocity = 1.5686274509803922E-4;
 	public int numElevators;
 	public Socket socket;
-	public double topFloor;
 
 	ElevatorWriter writer;
 	ElevatorThread[] elevators;
@@ -37,7 +33,6 @@ public class Controller implements Serializable, Remote{
 		this.numElevators = numElevators;
 		elevators = new ElevatorThread[numElevators];
 		positions = new double[numElevators];
-		topFloor = (double) numElevators - 0.04;
 		try {
 			socket = new Socket("localhost", 4711);
 		} catch (UnknownHostException e) {
@@ -88,22 +83,28 @@ public class Controller implements Serializable, Remote{
 	
 	//decide which elevator should take the request
 	public int closestElevator(Request request){
+		//knapp i motsatt direction ändrar inte direction när den åker till platsen
+		//båda uppåt, befinner sig ovanför men tidigare request ska nedåt
 		int floor = request.floor;
 		int direction = request.direction;
 		int bestSoFar = 0;
 		double tmpDistance = numElevators;
-		double distance = numElevators;
+		double distance = numElevators+1;
 		for (ElevatorThread elevator : elevators) {
 			tmpDistance = Math.abs(elevator.position-floor);
-			if(elevator.direction == STOP && tmpDistance <= distance){
-				bestSoFar = elevator.id;
-				distance = tmpDistance;
+			System.out.println("elev "+elevator.id+ " " +"tmpdist:"+tmpDistance + " vs dist:"+distance);
+			if(elevator.direction == STOP){
+				if(tmpDistance <= distance){
+					bestSoFar = elevator.id;
+					distance = tmpDistance;
+				}
 				continue;
 			}
 			boolean differentDirections = (elevator.direction != direction);
 			boolean bothUp = (elevator.direction == direction && direction == UP);
 			boolean bothDown = (elevator.direction == direction && direction == DOWN);
-			if(differentDirections || (bothUp && (elevator.position > floor)) || (bothDown && (elevator.position < floor))){
+			boolean wrongDirection = (direction != elevator.queue.peek().direction);
+			if(differentDirections || (bothUp && (elevator.position > floor)) || (bothDown && (elevator.position < floor) || wrongDirection)){
 				continue;
 			}
 			if(tmpDistance <= distance){
@@ -124,44 +125,46 @@ public class Controller implements Serializable, Remote{
 	public void buttonPressed(int floor, int direction){
 		Request r = new Request(floor, direction);
 		int id = closestElevator(r);
-		elevators[id].addRequest(floor);
-		System.err.println("Button pressed at floor "+floor+ " with dir "+direction+ "\n elevator assigned:"+id);
-		/*if(direction == UP)
-			writer.moveElevatorUp(id);
-		else
-			writer.moveElevatorDown(id);*/
+		elevators[id].addRequest(r);
+		//System.err.println("Button r at floor "+floor+ " with dir "+direction+ "\n elevator assigned:"+id);
 	}
 
 	//input p elevator destination
 	public void panelPressed(int elevator, int destination){
-		elevators[elevator-1].addRequest(destination);
+		int direction = getDirection(elevator, destination);
+		Request r = new Request(destination, direction);
+		if(destination == 32000)
+			elevators[elevator-1].emergencyStop();
+		else
+			elevators[elevator-1].addRequest(r);
+	}
+
+	private int getDirection(int elevator, int destination) {
+		double elevatorPosition = elevators[elevator-1].getPosition();
+		if(destination > elevatorPosition){
+			return UP;
+		}
+		else if(destination < elevatorPosition){
+			return DOWN;
+		}
+		return STOP;
 	}
 
 	//input f elevator position
 	public void elevatorPosition(int elevator, double position){
 		position = cutDecimals(position);
-		elevators[elevator-1].position = position;
-		positions[elevator-1] = position;
-		//gör varje position till en monitor?
-		/*if (position == 2.00){
-			writer.stopElevator(elevator);
-		}*/
+		elevators[elevator-1].setPosition(position);
 	}
 
 	public static void main(String[] args) throws UnknownHostException, IOException{
 		int numberOfElevators = 5;
 		Controller c = new Controller(numberOfElevators);
-		//RMI rmi = new RMI();
 		c.connect();
 	}
 
-	
 	public double cutDecimals(double n){
 		BigDecimal fd = new BigDecimal(n);
 		BigDecimal cutted = fd.setScale(2, RoundingMode.DOWN);
 		return cutted.doubleValue();
 	}
-	
-
-
 }

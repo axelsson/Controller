@@ -6,7 +6,12 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 
 public class ElevatorThread extends Thread{
+	//TODO måste fortsätta i samma direction efter button pressed up/ner
+	//glapp: hissen fortsätter upp 
+	//problem: tryck 2 sen 1 när den precis har passerat 1. samma direction ger fel request först i kön. 
+	//om en hiss tvingas ta request i fel riktning ex upp 3, ner 2, och den är på väg upp, kommer två prioriteras högst ändå.
 	public int id;
+	public boolean willChangeDirection = false;
 	private int actualId;
 	public double position = 0.0;
 	public boolean openDoor = false;
@@ -14,21 +19,26 @@ public class ElevatorThread extends Thread{
 	public boolean moving = false;
 	public Integer currentRequest = null;
 	private ElevatorWriter writer;
-	PriorityQueue<Integer> queue =  new PriorityQueue<Integer>(10, new Comparator<Integer>() {	
+	PriorityQueue<Request> queue =  new PriorityQueue<Request>(10, new Comparator<Request>() {	
 			//compare sorts the queue in different orders depending on the direction of the elevator
-			public int compare(Integer o1, Integer o2) {
+			public int compare(Request o1, Request o2) {
+
 				switch (direction){
 				case 1: 
 					//up sorts values in default order
-					if (o1 > o2){
+					if (o1.floor > o2.floor){
 						return 1;
 					}
+					//else if(o1.direction != o2.direction)
+					//	return 1;
 					else{return -1;}
 				case 2: 
 					//down sorts the values backwards
-					if (o1 < o2){
+					if (o1.floor < o2.floor){
 						return 1;
 					}
+					//else if(o1.direction != o2.direction)
+						//return -1;
 					else{return -1;}
 				}
 				return 1; }
@@ -52,16 +62,16 @@ public class ElevatorThread extends Thread{
 					this.wait (10);
 				}
 				if(!queue.isEmpty() && !moving){
-					currentRequest = queue.peek();
+					currentRequest = queue.peek().floor;
 					System.err.println("Request taken, elevator "+id);
-					if(isCloseToFloor(position, currentRequest))
+					if(isCloseToFloor())
 						openDoor();
 					else if(position < currentRequest)
 						moveUp();
 					else
 						moveDown();
 				}
-				else if(moving && isCloseToFloor(position, currentRequest)){//position == (double) currentRequest.floor){
+				else if(moving && isCloseToFloor()){
 					stopMove();
 					openDoor();
 				}
@@ -71,21 +81,40 @@ public class ElevatorThread extends Thread{
 			}
 		}
 	}
-	public void stopOrder(){
+	
+	public void setPosition(double position){
 		this.position = position;
 	}
-	public boolean isCloseToFloor(double position, int floor){
-		if(position > ((double) floor)-0.05 && position < ((double) floor)+0.05)
+	public double getPosition(){
+		return this.position;
+	}
+	
+	//will remove a queued floor if the elevator is positioned there
+	public boolean isCloseToFloor(){
+		//an interval is needed to be able to stop at the top floor
+		int floor = queue.peek().floor;
+		if(position > ((double) floor)-0.05 && position < ((double) floor)+0.05){
+			queue.poll();
 			return true;
+		}
+		
 		return false;
 	}
 
-	public void addRequest(int destination){
-		if(queue.contains(destination)){
-			System.err.println("Request already exists.");
-			return;
+	public void addRequest(Request r){
+		if(!queue.isEmpty()){
+			if(queue.peek().floor == r.floor && queue.peek().direction == r.direction){
+				System.err.println("Request already exists.");
+				return;
+			}
 		}
-		queue.add(destination);
+		System.err.println("Direction is: "+direction);
+		System.err.println("Request for floor "+r.floor+ " added for elevator "+id+ "\n Queue:");
+		queue.add(r);
+		for (Request request : queue) {
+			System.err.println(request.floor);
+		}
+		currentRequest = queue.peek().floor;
 	}
 
 	public void openDoor(){
@@ -101,11 +130,18 @@ public class ElevatorThread extends Thread{
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
-		queue.poll();
+		moving = false;
 	}
-
+	
+	public void emergencyStop(){
+		moving = false;
+		direction = Controller.STOP;
+		queue.clear();
+		writer.stopElevator(actualId);
+	}
 	public void stopMove(){
 		moving = false;
+		direction = Controller.STOP;
 		writer.stopElevator(actualId);
 	}
 	public void moveUp(){
