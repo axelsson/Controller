@@ -1,9 +1,10 @@
-import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.net.Socket;
-
+/**
+ * class for writing messages to the elevator program. 
+ * @author Axelsson
+ */
 public class ElevatorWriter extends Thread {
 	private static final int UP = 1;
 	private static final int DOWN = -1;
@@ -12,33 +13,27 @@ public class ElevatorWriter extends Thread {
 	private static final int CLOSE = -1;
 	DataOutputStream outToServer;
 	
+	/**
+	 * The constructor will set up an outputstream to the green elevator application.
+	 * @param clientSocket
+	 * @throws IOException
+	 */
 	public ElevatorWriter(Socket clientSocket) throws IOException {
 		outToServer = new DataOutputStream(clientSocket.getOutputStream()); 
 	}
-
-	public void run(){
-		BufferedReader inFromUser = new BufferedReader( new InputStreamReader(System.in));
-		/*while(true){
-			String sentence;
-			try {
-				sentence = inFromUser.readLine();
-				outToServer.writeBytes(sentence + '\n'); 
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-			
-		}*/
-	}
 	
-	public void sendMessage(String msg){
+	/**
+	 * sendMessage is a synchronized method since object is used by several threads. It will write to the green elevator.
+	 */
+	public synchronized void sendMessage(String msg){
 		try {
 			outToServer.writeBytes(msg+'\n');
 			System.out.println(msg+'\n');
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}
+	
 	public void moveElevatorUp(int id){
 		sendMessage("m "+id+" "+UP);
 	}

@@ -1,72 +1,91 @@
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.Serializable;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.Socket;
 import java.net.UnknownHostException;
-import java.rmi.Remote;
-/*TODO
- * om en hiss snart är klar med sin order och nära, låt den ta request
- * måste räkna ut kostnad för halvklar hiss, och ha koll på vilket håll den ska åt från button req
- * lägg på kostnad för dörröppning också
- * problem: om hissen får req från knapptryckning på samma våning fast ett upp och ett ner. Går bra när första är i samma riktning som hissen
+/**
  * 
- * */
-
-//en hiss, flera request åt olika håll. 
-public class Controller implements Serializable, Remote{
-	private static final long serialVersionUID = 1L;
+ * This program is meant to be the controller for the green elevator application. 
+ * 
+ * Controller is the main class that will listen for input and decide what to do with it. 
+ * It will decide which elevator should take a request, and notify a thread when an update of 
+ * position or a new request is available.
+ * @author Axelsson
+ *
+ */
+public class Controller{
 	public static final int UP = 1;
 	public static final int DOWN = -1;
 	public static final int STOP = 0;
-	private double velocity = 1.5686274509803922E-4;
+	public static double velocity = 1.5686274509803922E-4;
+	public static double initialVelocity = 1.5686274509803922E-4;
 	public int numElevators;
 	public Socket socket;
+	public static boolean isRunning = true;
 
 	ElevatorWriter writer;
 	ElevatorThread[] elevators;
-	double[] positions;
 
+	/**
+	 * The controller will have a number of elevator threads, given in input, and a socket for reading input
+	 * @param numElevators
+	 */
 	public Controller (int numElevators){
 		this.numElevators = numElevators;
 		elevators = new ElevatorThread[numElevators];
-		positions = new double[numElevators];
 		try {
 			socket = new Socket("localhost", 4711);
 		} catch (UnknownHostException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} 
-		for (int i = 0; i < numElevators; i++) {
-			elevators[i] = new ElevatorThread(i, socket);
-		}
+
 	}
 
+	/**
+	 * Connect starts the threads and begins to read input.
+	 * @throws UnknownHostException
+	 * @throws IOException
+	 */
 	public void connect() throws UnknownHostException, IOException{
 		
-		BufferedReader inFromServer = new BufferedReader(
-									  new InputStreamReader(socket.getInputStream()));
+		BufferedReader inFromServer = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 		writer = new ElevatorWriter(socket);
 		writer.start();
+		for (int i = 0; i < numElevators; i++) {
+			elevators[i] = new ElevatorThread(i, writer);
+		}
 		for (ElevatorThread elevator : elevators) {
 			elevator.start();
 		}
 		while (true){
 			try {
 				String input = inFromServer.readLine();
-				System.err.println(input);
+				//System.err.println(input);
 				handleInput(input.split(" "));
 			} catch (IOException e) {
 				System.out.println("Bye bye!");
+				isRunning = false;
+				socket.close();
+				for (ElevatorThread elevator : elevators) {
+					try {
+						elevator.join();
+					} catch (InterruptedException e1) {
+						e1.printStackTrace();
+					}
+				}
 				break;
 			}
 		}
 	}	
+	
+	/**
+	 * handleInput parses input and decides what method to run.
+	 * @param input
+	 */
 	public void handleInput(String[] input){
 		String letter = input[0];
 		switch (letter) {
@@ -81,18 +100,20 @@ public class Controller implements Serializable, Remote{
 		}
 	}
 	
-	//decide which elevator should take the request
+	/**
+	 * closestElevator will decide which elevator should take the request given in input
+	 * @param request
+	 * @return the chosen elevators id
+	 */
 	public int closestElevator(Request request){
-		//knapp i motsatt direction ändrar inte direction när den åker till platsen
-		//båda uppåt, befinner sig ovanför men tidigare request ska nedåt
 		int floor = request.floor;
 		int direction = request.direction;
-		int bestSoFar = 0;
+		int bestSoFar = 0;	//keep track on which elevator is best fit for taking the request
 		double tmpDistance = numElevators;
 		double distance = numElevators+1;
 		for (ElevatorThread elevator : elevators) {
 			tmpDistance = Math.abs(elevator.position-floor);
-			System.out.println("elev "+elevator.id+ " " +"tmpdist:"+tmpDistance + " vs dist:"+distance);
+			//if the elevator stands still, check the distance and update if better
 			if(elevator.direction == STOP){
 				if(tmpDistance <= distance){
 					bestSoFar = elevator.id;
@@ -104,6 +125,7 @@ public class Controller implements Serializable, Remote{
 			boolean bothUp = (elevator.direction == direction && direction == UP);
 			boolean bothDown = (elevator.direction == direction && direction == DOWN);
 			boolean wrongDirection = (direction != elevator.queue.peek().direction);
+			//check several conditions for when it is not good to queue the request
 			if(differentDirections || (bothUp && (elevator.position > floor)) || (bothDown && (elevator.position < floor) || wrongDirection)){
 				continue;
 			}
@@ -115,21 +137,31 @@ public class Controller implements Serializable, Remote{
 		return bestSoFar;
 	}
 	
-	//input v velocity
-	public void velocityChanged(double velocity){
-		this.velocity = velocity;
-		System.err.println("changed velocity!");
+	/**
+	 * velocityChanged will take a new velocity as input.
+	 * @param newVelocity
+	 */
+	public void velocityChanged(double newVelocity){
+		velocity = newVelocity;
 	}
 
-	//input b elevator direction 
+	/**
+	 * buttonPressed takes a floor and a direction, creates a new request and sends it to the best elevator. 
+	 * @param floor
+	 * @param direction
+	 */
 	public void buttonPressed(int floor, int direction){
 		Request r = new Request(floor, direction);
 		int id = closestElevator(r);
 		elevators[id].addRequest(r);
-		//System.err.println("Button r at floor "+floor+ " with dir "+direction+ "\n elevator assigned:"+id);
 	}
 
-	//input p elevator destination
+	/**
+	 * panelPressed takes an elevator id and a destination, creates a new request and sends it to the given elevator. 
+	 * Calls emergencyStop if the request destination is 3200.
+	 * @param floor
+	 * @param direction
+	 */
 	public void panelPressed(int elevator, int destination){
 		int direction = getDirection(elevator, destination);
 		Request r = new Request(destination, direction);
@@ -139,6 +171,12 @@ public class Controller implements Serializable, Remote{
 			elevators[elevator-1].addRequest(r);
 	}
 
+	/**
+	 * getDirection calculates the direction of the request relative to the elevator position.
+	 * @param elevator
+	 * @param destination
+	 * @return direction
+	 */
 	private int getDirection(int elevator, int destination) {
 		double elevatorPosition = elevators[elevator-1].getPosition();
 		if(destination > elevatorPosition){
@@ -150,21 +188,40 @@ public class Controller implements Serializable, Remote{
 		return STOP;
 	}
 
-	//input f elevator position
+	/**
+	 * elevatorPosition takes an elevator id and a position as input and calls setPosition on the elevator object.
+	 * @param elevator
+	 * @param position
+	 */
 	public void elevatorPosition(int elevator, double position){
 		position = cutDecimals(position);
 		elevators[elevator-1].setPosition(position);
 	}
 
+	/**
+	 * Main method, arguments should be a number of elevators
+	 * @param args
+	 * @throws UnknownHostException
+	 * @throws IOException
+	 */
 	public static void main(String[] args) throws UnknownHostException, IOException{
-		int numberOfElevators = 5;
+		if(args.length != 1){
+			System.err.println("Incorrect arguments. Need to give a number of elevators");
+			return;
+		}
+		int numberOfElevators = Integer.parseInt(args[0]);
 		Controller c = new Controller(numberOfElevators);
 		c.connect();
 	}
 
+	/**
+	 * cutDecimals is used to cut the double values of a position into something more useful.
+	 * @param n
+	 * @return double with only two decimals
+	 */
 	public double cutDecimals(double n){
 		BigDecimal fd = new BigDecimal(n);
-		BigDecimal cutted = fd.setScale(2, RoundingMode.DOWN);
+		BigDecimal cutted = fd.setScale(2, RoundingMode.DOWN); 
 		return cutted.doubleValue();
 	}
 }
