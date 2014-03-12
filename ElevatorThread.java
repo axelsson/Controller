@@ -82,8 +82,12 @@ public class ElevatorThread extends Thread{
 		//is there are requests left but the elevator is standing still, take the next request.
 		if(!queue.isEmpty() && !moving){
 			currentRequest = queue.peek().floor;
+			if(direction == STOP)
+				direction = queue.peek().direction;
+			System.err.println("directioN:"+direction);
+			System.err.println("current request:"+currentRequest);
 			//if the request is on the same floor, open up and serve that request, else move in the right way
-			if(isCloseToFloor())
+			if(isCloseToFloor(currentRequest))
 				openDoor();
 			else if(position < currentRequest)
 				moveUp();
@@ -91,9 +95,11 @@ public class ElevatorThread extends Thread{
 				moveDown();
 		}
 		//if the elevator is moving and is in position to let someone off/on, do it. 
-		else if(moving && isCloseToFloor()){
+		else if(moving && isCloseToFloor(currentRequest)){
 			stopMove();
 			openDoor();
+			if(queue.isEmpty())
+				direction = STOP;
 		}
 	}
 	
@@ -103,6 +109,10 @@ public class ElevatorThread extends Thread{
 	 */
 	public void setPosition(double position){
 		this.position = position;
+		for (int i = 0; i < Controller.numFloors+1; i++) {
+			if(isCloseToFloor(i))
+				writer.setScale(this.actualId, i);
+		}
 		synchronized (this){
 			this.notify ();
 		}
@@ -116,11 +126,9 @@ public class ElevatorThread extends Thread{
 	 * isCloseToFloor will remove a queued request if the elevator is positioned at the request's destination.
 	 * @return true if a request was removed, false otherwise
 	 */
-	public boolean isCloseToFloor(){
+	public boolean isCloseToFloor(int floor){
 		//an interval is needed to be able to stop at the top floor
-		int floor = queue.peek().floor;
 		if(position > ((double) floor)-0.05 && position < ((double) floor)+0.05){
-			queue.poll();
 			return true;
 		}
 		return false;
@@ -137,13 +145,16 @@ public class ElevatorThread extends Thread{
 			}
 		}
 		//if it is headed in the wrong direction or badly situated, place it in the next-queue
-		if ((direction != request.direction)||(direction == UP && request.floor < position) || (direction == DOWN && request.floor > position)){
+		if ((direction != request.direction && (direction != STOP))||(direction == UP && request.floor < position) || (direction == DOWN && request.floor > position)){
+			System.err.println("added request for floor: "+request.floor+" to next queue");
 			nextRoundRequests.add(request);
 			return;
 		}
 		//else just add it and update the current request (which might be the new one)
 		queue.add(request);
 		currentRequest = queue.peek().floor;
+		System.err.println("directioN;"+direction);
+		System.err.println("added req:"+request.floor+" to queue, current req is: "+currentRequest);
 		//to get going, notify thread, else it wont move.
 		if(queue.size() == 1){
 			synchronized (this){
@@ -156,8 +167,9 @@ public class ElevatorThread extends Thread{
 	 * openDoor will order the writer to open the door, sleep for a while, then close again.
 	 */
 	public void openDoor(){
+		queue.poll();
 		writer.openDoor(actualId);
-		direction = Controller.STOP;
+		//direction = Controller.STOP;
 		try {
 			Thread.sleep((int)(2000*(Controller.initialVelocity/Controller.velocity)));
 
@@ -174,7 +186,7 @@ public class ElevatorThread extends Thread{
 	 */
 	public void emergencyStop(){
 		moving = false;
-		direction = Controller.STOP;
+		direction = STOP;
 		queue.clear();
 		nextRoundRequests.clear();
 		writer.stopElevator(actualId);
@@ -185,7 +197,7 @@ public class ElevatorThread extends Thread{
 	 */
 	public void stopMove(){
 		moving = false;
-		direction = Controller.STOP;
+		//direction = Controller.STOP;
 		writer.stopElevator(actualId);
 	}
 	

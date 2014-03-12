@@ -28,7 +28,7 @@ public class ElevatorWriter extends Thread {
 	public synchronized void sendMessage(String msg){
 		try {
 			outToServer.writeBytes(msg+'\n');
-			System.out.println(msg+'\n');
+			//System.out.println(msg+'\n');
 		} catch (IOException e) {
 			e.printStackTrace();
 		}

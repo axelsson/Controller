@@ -21,7 +21,8 @@ public class Controller{
 	public static final int STOP = 0;
 	public static double velocity = 1.5686274509803922E-4;
 	public static double initialVelocity = 1.5686274509803922E-4;
-	public int numElevators;
+	public static int numElevators;
+	public static int numFloors;
 	public Socket socket;
 	public static boolean isRunning = true;
 
@@ -32,8 +33,10 @@ public class Controller{
 	 * The controller will have a number of elevator threads, given in input, and a socket for reading input
 	 * @param numElevators
 	 */
-	public Controller (int numElevators){
-		this.numElevators = numElevators;
+	public Controller (int numberOfElevators, int numberOfFloors){
+		numElevators = numberOfElevators;
+		numFloors = numberOfFloors;
+		
 		elevators = new ElevatorThread[numElevators];
 		try {
 			socket = new Socket("localhost", 4711);
@@ -110,11 +113,11 @@ public class Controller{
 		int direction = request.direction;
 		int bestSoFar = 0;	//keep track on which elevator is best fit for taking the request
 		double tmpDistance = numElevators;
-		double distance = numElevators+1;
+		double distance = numFloors;
 		for (ElevatorThread elevator : elevators) {
 			tmpDistance = Math.abs(elevator.position-floor);
 			//if the elevator stands still, check the distance and update if better
-			if(elevator.direction == STOP){
+			if(elevator.queue.isEmpty()){
 				if(tmpDistance <= distance){
 					bestSoFar = elevator.id;
 					distance = tmpDistance;
@@ -205,12 +208,13 @@ public class Controller{
 	 * @throws IOException
 	 */
 	public static void main(String[] args) throws UnknownHostException, IOException{
-		if(args.length != 1){
+		if(args.length != 2){
 			System.err.println("Incorrect arguments. Need to give a number of elevators");
 			return;
 		}
 		int numberOfElevators = Integer.parseInt(args[0]);
-		Controller c = new Controller(numberOfElevators);
+		int numberOfFloors = Integer.parseInt(args[1]);
+		Controller c = new Controller(numberOfElevators, numberOfFloors);
 		c.connect();
 	}
 
