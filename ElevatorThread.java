@@ -44,7 +44,7 @@ public class ElevatorThread extends Thread{
 		});
 	
 	/**
-	 * ElevatorThread simply sets some values needed.
+	 * Initializes the elevatorThread.
 	 * @param id
 	 * @param writer
 	 */
@@ -123,7 +123,8 @@ public class ElevatorThread extends Thread{
 	}
 	
 	/**
-	 * isCloseToFloor will remove a queued request if the elevator is positioned at the request's destination.
+	 * isCloseToFloor will check if the elevator is positioned at the given floor, with an interval +- 0.05.
+	 * @param floor
 	 * @return true if a request was removed, false otherwise
 	 */
 	public boolean isCloseToFloor(int floor){
